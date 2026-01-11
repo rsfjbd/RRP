@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium IPTV | OTT Experience</title>
+    
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <style>
+        :root {
+            --primary: #e50914; /* Netflix Red */
+            --bg-dark: #0a0a0a;
+            --bg-card: rgba(255, 255, 255, 0.05);
+            --glass: rgba(255, 255, 255, 0.1);
+            --text: #ffffff;
+            --accent: #00d4ff;
+        }
+
+        * { box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { margin: 0; background: var(--bg-dark); color: var(--text); overflow: hidden; }
+
+        /* --- 1. Layout Structure --- */
+        .app-container { display: flex; height: 100vh; width: 100vw; }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 260px; background: #111; border-right: 1px solid #222;
+            display: flex; flex-direction: column; transition: 0.4s;
+            z-index: 100;
+        }
+        .sidebar.hidden { margin-left: -260px; }
+
+        /* Main Content */
+        .main-content { flex: 1; display: flex; flex-direction: column; position: relative; overflow-y: auto; }
+
+        /* --- 2. Video Player Section --- */
+        .player-wrapper {
+            width: 100%; aspect-ratio: 16/9; background: #000;
+            position: sticky; top: 0; z-index: 50; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        .video-js { width: 100%; height: 100%; }
+        
+        /* Watermark */
+        .watermark {
+            position: absolute; top: 20px; right: 20px; z-index: 60;
+            opacity: 0.5; pointer-events: none; width: 80px;
+        }
+
+        /* --- 3. UI Components --- */
+        .header-bar { padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(to bottom, #111, transparent); }
+        .digital-clock { font-family: monospace; color: var(--accent); font-weight: bold; }
+
+        .search-box {
+            padding: 10px 20px; position: sticky; top: 0; background: var(--bg-dark); z-index: 40;
+        }
+        .search-input {
+            width: 100%; padding: 12px; border-radius: 8px; border: none;
+            background: var(--bg-card); color: #fff; outline: 1px solid #333;
+        }
+
+        /* Category Filter */
+        .category-filter {
+            display: flex; gap: 10px; overflow-x: auto; padding: 10px 20px;
+            scrollbar-width: none; white-space: nowrap;
+        }
+        .cat-btn {
+            padding: 8px 18px; border-radius: 20px; background: var(--bg-card);
+            cursor: pointer; border: 1px solid #333; font-size: 13px;
+        }
+        .cat-btn.active { background: var(--primary); border-color: var(--primary); }
+
+        /* Channel Grid */
+        .channel-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 15px; padding: 20px;
+        }
+        .channel-card {
+            background: var(--bg-card); border-radius: 10px; overflow: hidden;
+            cursor: pointer; transition: 0.3s; border: 1px solid transparent;
+            position: relative;
+        }
+        .channel-card:hover { transform: scale(1.05); border-color: var(--primary); background: var(--glass); }
+        .channel-thumb { width: 100%; aspect-ratio: 16/9; object-fit: contain; background: #000; padding: 10px; }
+        .channel-name { padding: 10px; font-size: 12px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .fav-btn { position: absolute; top: 5px; right: 5px; color: #fff; opacity: 0.5; }
+        .fav-btn.active { color: yellow; opacity: 1; }
+
+        /* Footer */
+        .footer-info { padding: 20px; text-align: center; font-size: 12px; color: #555; }
+
+        /* Animations */
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+        .loading-shimmer { animation: pulse 1.5s infinite; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; left: -100%; }
+            .sidebar.active { left: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <aside class="sidebar" id="sidebar">
+        <div style="padding: 25px; text-align: center; border-bottom: 1px solid #222;">
+            <h2 style="color: var(--primary); margin: 0;"><i class="fa-solid fa-play-circle"></i> PRO IPTV</h2>
+        </div>
+        <div style="padding: 20px;">
+            <p style="font-size: 12px; color: #666;">PLAYLIST SETUP</p>
+            <input type="text" id="m3uUrl" class="search-input" style="font-size: 12px;" placeholder="Paste M3U URL here...">
+            <button onclick="loadRemotePlaylist()" class="cat-btn" style="width: 100%; margin-top: 10px; background: var(--primary);">Load Playlist</button>
+            <hr style="border: 0; border-top: 1px solid #222; margin: 20px 0;">
+            <div class="menu-item"><i class="fa-solid fa-heart"></i> Favorites</div>
+            <div class="menu-item"><i class="fa-solid fa-history"></i> Recent</div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <div class="player-wrapper">
+            <img src="https://via.placeholder.com/80x40/000000/FFFFFF?text=LOGO" class="watermark" id="watermark">
+            <video id="main-video" class="video-js vjs-big-play-centered" controls preload="auto" poster="https://via.placeholder.com/1920x1080/111/fff?text=Select+a+Channel"></video>
+        </div>
+
+        <div class="header-bar">
+            <button onclick="toggleSidebar()" class="cat-btn"><i class="fa-solid fa-bars"></i> Menu</button>
+            <div class="digital-clock" id="clock">00:00:00 PM</div>
+            <div id="status-msg" style="font-size: 12px; color: var(--accent);">Ready</div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search channels, movies, sports..." oninput="filterChannels()">
+        </div>
+
+        <div class="category-filter" id="categoryFilter">
+            <div class="cat-btn active" onclick="filterByCategory('All')">All</div>
+        </div>
+
+        <div class="channel-grid" id="channelGrid">
+            </div>
+
+        <div class="footer-info">
+            © 2026 Premium IPTV Web App | v2.0 | High Performance Mode
+        </div>
+    </main>
+</div>
+
+<script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+
+<script>
+    let allChannels = [];
+    let favorites = JSON.parse(localStorage.getItem('favs')) || [];
+    const player = videojs('main-video');
+
+    // 1. Digital Clock
+    setInterval(() => {
+        document.getElementById('clock').innerText = new Date().toLocaleTimeString();
+    }, 1000);
+
+    // 2. Sidebar Toggle
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('hidden');
+    }
+
+    // 3. Load M3U Playlist
+    async function loadRemotePlaylist() {
+        const url = document.getElementById('m3uUrl').value;
+        if(!url) return alert("Please enter URL");
+        
+        document.getElementById('status-msg').innerText = "Loading...";
+        
+        try {
+            // Using a CORS Proxy for security & access
+            const proxy = "https://api.allorigins.win/raw?url=";
+            const response = await fetch(proxy + encodeURIComponent(url));
+            const data = await response.text();
+            parseM3U(data);
+        } catch (e) {
+            alert("Error loading playlist. Check URL or CORS.");
+            document.getElementById('status-msg').innerText = "Load Failed";
+        }
+    }
+
+    // 4. M3U Parser (Advanced)
+    function parseM3U(content) {
+        const lines = content.split('\n');
+        allChannels = [];
+        let categories = new Set(['All']);
+
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].startsWith('#EXTINF:')) {
+                const line = lines[i];
+                const streamUrl = lines[i + 1]?.trim();
+                
+                const name = line.split(',')[1]?.trim() || "Unknown Channel";
+                const logoMatch = line.match(/tvg-logo="([^"]+)"/);
+                const groupMatch = line.match(/group-title="([^"]+)"/);
+                
+                const logo = logoMatch ? logoMatch[1] : "https://via.placeholder.com/150/000/fff?text=TV";
+                const category = groupMatch ? groupMatch[1] : "General";
+
+                if(streamUrl && streamUrl.startsWith('http')) {
+                    allChannels.push({ name, url: streamUrl, logo, category });
+                    categories.add(category);
+                }
+            }
+        }
+        
+        renderCategories(Array.from(categories));
+        renderChannels(allChannels);
+        document.getElementById('status-msg').innerText = `${allChannels.length} Channels Loaded`;
+    }
+
+    // 5. Render Channels
+    function renderChannels(list) {
+        const grid = document.getElementById('channelGrid');
+        grid.innerHTML = list.map(ch => `
+            <div class="channel-card" onclick="playChannel('${ch.url}', '${ch.name}')">
+                <i class="fa-solid fa-heart fav-btn ${favorites.includes(ch.url) ? 'active' : ''}" onclick="toggleFav(event, '${ch.url}')"></i>
+                <img src="${ch.logo}" class="channel-thumb" onerror="this.src='https://via.placeholder.com/150/111/fff?text=No+Logo'">
+                <div class="channel-name">${ch.name}</div>
+            </div>
+        `).join('');
+    }
+
+    // 6. Play Channel with Error Handling
+    function playChannel(url, name) {
+        document.getElementById('status-msg').innerText = "Connecting...";
+        
+        player.src({ src: url, type: 'application/x-mpegURL' });
+        player.play().then(() => {
+            document.getElementById('status-msg').innerText = "Streaming: " + name;
+            // Mobile Auto Hide Sidebar
+            if(window.innerWidth < 768) toggleSidebar();
+        }).catch(err => {
+            document.getElementById('status-msg').innerHTML = "<span style='color:red;'>Stream Offline</span>";
+        });
+    }
+
+    // 7. Filters & Search
+    function filterChannels() {
+        const term = document.getElementById('searchInput').value.toLowerCase();
+        const filtered = allChannels.filter(c => c.name.toLowerCase().includes(term));
+        renderChannels(filtered);
+    }
+
+    function renderCategories(cats) {
+        const filter = document.getElementById('categoryFilter');
+        filter.innerHTML = cats.map(c => `<div class="cat-btn" onclick="filterByCategory('${c}')">${c}</div>`).join('');
+    }
+
+    function filterByCategory(cat) {
+        if(cat === 'All') return renderChannels(allChannels);
+        const filtered = allChannels.filter(c => c.category === cat);
+        renderChannels(filtered);
+    }
+
+    // 8. Favorites System
+    function toggleFav(e, url) {
+        e.stopPropagation();
+        if(favorites.includes(url)) {
+            favorites = favorites.filter(f => f !== url);
+        } else {
+            favorites.push(url);
+        }
+        localStorage.setItem('favs', JSON.stringify(favorites));
+        filterChannels();
+    }
+
+</script>
+
+</body>
+  </html>
